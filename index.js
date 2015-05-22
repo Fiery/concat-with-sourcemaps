@@ -104,6 +104,80 @@ Concat.prototype.add = function(filePath, content, sourceMap) {
   }
 };
 
+Concat.prototype.put = function(fileIndex,filePath, content, sourceMap) {
+  filePath = unixStylePath(filePath);
+
+  if (!Buffer.isBuffer(content)) {
+    content = new Buffer(content);
+  }
+ while (this.contentParts.length <= 2* fileIndex){
+    if (this.contentParts.length !== 0) {
+      this.contentParts.push(this.separator);
+    }
+    this.contentParts.push(null);
+  }
+  this.contentParts[2*fileIndex]=content;
+
+  if (this.sourceMapping) {
+    var contentString = content.toString();
+    var lines = contentString.split('\n').length;
+
+    if (Object.prototype.toString.call(sourceMap) === '[object String]')
+      sourceMap = JSON.parse(sourceMap);
+
+    if (sourceMap && sourceMap.mappings && sourceMap.mappings.length > 0) {
+      var upstreamSM = new SourceMapConsumer(sourceMap);
+      var _this = this;
+      upstreamSM.eachMapping(function(mapping) {
+        if (mapping.source) {
+          _this._sourceMap.addMapping({
+            generated: {
+              line: _this.lineOffset + mapping.generatedLine,
+              column: (mapping.generatedLine === 1 ? _this.columnOffset : 0) + mapping.generatedColumn
+            },
+            original: {
+              line: mapping.originalLine,
+              column: mapping.originalColumn
+            },
+            source: mapping.source,
+            name: mapping.name
+          });
+        }
+      });
+      if (upstreamSM.sourcesContent) {
+        upstreamSM.sourcesContent.forEach(function(sourceContent, i) {
+          _this._sourceMap.setSourceContent(upstreamSM.sources[i], sourceContent);
+        });
+      }
+    } else {
+      if (sourceMap && sourceMap.sources && sourceMap.sources.length > 0)
+        filePath = sourceMap.sources[0];
+      for (var i = 1; i <= lines; i++) {
+        this._sourceMap.addMapping({
+          generated: {
+            line: this.lineOffset + i,
+            column: (i === 1 ? this.columnOffset : 0)
+          },
+          original: {
+            line: i,
+            column: 0
+          },
+          source: filePath
+        });
+      }
+      if (sourceMap && sourceMap.sourcesContent)
+        this._sourceMap.setSourceContent(filePath, sourceMap.sourcesContent[0]);
+    }
+    if (lines > 1)
+      this.columnOffset = 0;
+    if (this.separatorLineOffset === 0)
+      this.columnOffset += contentString.length - Math.max(0, contentString.lastIndexOf('\n')+1);
+    this.columnOffset += this.separatorColumnOffset;
+    this.lineOffset += lines - 1 + this.separatorLineOffset;
+  }
+};
+
+
 Object.defineProperty(Concat.prototype, 'content', {
   get: function content() {
     return Buffer.concat(this.contentParts);
